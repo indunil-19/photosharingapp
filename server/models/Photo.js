@@ -27,6 +27,11 @@ const Photo = sequelize.define('Photo', {
     type: DataTypes.INTEGER,
     allowNull: false,
   },
+  metadata: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: null,
+  },
   caption: {
     type: DataTypes.STRING(500),
     allowNull: true,

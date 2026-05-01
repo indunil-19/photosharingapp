@@ -1,8 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const Photo = require('../models/Photo');
 const { upload, s3Client } = require('../middleware/upload');
+
+const PRESIGNED_URL_EXPIRY = 3600; // 1 hour
+
+// Generate a presigned URL for a photo
+async function getPresignedUrl(s3Key) {
+  const command = new GetObjectCommand({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: s3Key,
+  });
+  return getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRY });
+}
 
 // GET /api/photos - Get all photos (newest first)
 router.get('/', async (req, res) => {
@@ -17,8 +29,17 @@ router.get('/', async (req, res) => {
       offset,
     });
 
+    // Generate presigned URLs instead of exposing direct S3 URLs
+    const photosWithUrls = await Promise.all(
+      photos.map(async (photo) => {
+        const photoJson = photo.toJSON();
+        photoJson.imageUrl = await getPresignedUrl(photo.s3Key);
+        return photoJson;
+      })
+    );
+
     res.json({
-      photos,
+      photos: photosWithUrls,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
       totalPhotos: count,
@@ -50,6 +71,32 @@ router.post('/', upload.single('photo'), async (req, res) => {
   } catch (error) {
     console.error('Error uploading photo:', error);
     res.status(500).json({ error: 'Failed to upload photo.' });
+  }
+});
+
+// POST /api/webhook - Receive metadata from Lambda
+router.post('/webhook', async (req, res) => {
+  try {
+    const { objectKey, fileSize, mediaType } = req.body;
+
+    if (!objectKey) {
+      return res.status(400).json({ error: 'Missing objectKey.' });
+    }
+
+    const photo = await Photo.findOne({ where: { s3Key: objectKey } });
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found.' });
+    }
+
+    await photo.update({
+      metadata: { fileSize, mediaType, extractedAt: new Date().toISOString() },
+    });
+
+    console.log(`Metadata updated for: ${objectKey}`);
+    res.json({ message: 'Metadata updated successfully.' });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Failed to update metadata.' });
   }
 });
 

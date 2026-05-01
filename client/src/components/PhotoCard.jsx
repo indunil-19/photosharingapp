@@ -23,7 +23,7 @@ function PhotoCard({ photo, onDelete }) {
   return (
     <div className="photo-card">
       <div className="photo-image-wrapper">
-        <img src={photo.s3Url} alt={photo.caption || 'Shared photo'} loading="lazy" />
+        <img src={photo.imageUrl} alt={photo.caption || 'Shared photo'} loading="lazy" />
       </div>
       <div className="photo-info">
         {photo.caption && <p className="photo-caption">{photo.caption}</p>}
